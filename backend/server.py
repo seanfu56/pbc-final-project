@@ -40,6 +40,44 @@ class SimpleHandler(BaseHTTPRequestHandler):
                     }
                 )
 
+        elif self.path == '/fetch':
+            username = data.get('username', [""])[0]
+            mode = data.get('mode', [""])[0]
+            email_list = db_api.fetch_all_email(mode, username)
+
+            email_list = [
+                {
+                    "uid": row[0],
+                    "sender": row[1],
+                    "receiver": row[2],
+                    "title": row[3],
+                    "content": row[4],
+                    "timestamp": row[5]
+                }
+                for row in email_list
+            ]
+
+            print(email_list)
+            self._send_response({
+                "status": "ok",
+                "emails": email_list
+            })
+
+        elif self.path == '/send':
+            sender = data.get("sender", [""])[0]
+            receiver = data.get("receiver", [""])[0]
+            title = data.get("title", [""])[0]
+            content = data.get("content", [""])[0]
+
+            db_api.send_email(
+                sender=sender,
+                receiver=receiver,
+                title=title,
+                content=content
+            )
+
+            self._send_response({"status": "ok", "msg": "received"})
+
         elif self.path == "/message":
             msg = data.get("message", [""])[0]
             print(f"[MESSAGE] 收到訊息：{msg}")

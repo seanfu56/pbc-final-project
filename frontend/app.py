@@ -1,8 +1,13 @@
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QLineEdit, QPushButton, QLabel
+    QApplication, QWidget, QVBoxLayout, QLineEdit, QPushButton, QLabel, QScrollArea, QGroupBox, QTabWidget
 )
 import sys
 import requests
+import datetime
+
+from container.compose_tab import ComposeTab
+from container.receive_tab import InboxTab
+from container.send_tab import SentTab
 
 class LoginWindow(QWidget):
     def __init__(self):
@@ -62,17 +67,26 @@ class LoginWindow(QWidget):
 
     def goto_main_window(self):
         self.hide()
-        self.main_window = QWidget()
-        self.main_window.setWindowTitle("主畫面")
-        layout = QVBoxLayout()
-        layout.addWidget(QLabel("登入成功！歡迎使用"))
-        logout_button = QPushButton("登出")
-        logout_button.clicked.connect(self.logout)
-        layout.addWidget(logout_button)
-        self.main_window.setLayout(layout)
-        self.main_window.resize(300, 150)
-        self.main_window.show()
+        username = self.username_input.text()
 
+        self.main_window = QWidget()
+        self.main_window.setWindowTitle("信箱系統")
+        layout = QVBoxLayout()
+
+        tabs = QTabWidget()
+        tabs.addTab(InboxTab(username), "📥 收件匣")
+        tabs.addTab(SentTab(username), "📤 已寄信")
+        tabs.addTab(ComposeTab(username), "✉️ 寫新信")
+        layout.addWidget(tabs)
+
+        logout_btn = QPushButton("登出")
+        logout_btn.clicked.connect(self.logout)
+        layout.addWidget(logout_btn)
+
+        self.main_window.setLayout(layout)
+        self.main_window.resize(600, 600)
+        self.main_window.show()
+        
     def logout(self):
         self.main_window.close()
         self.show()

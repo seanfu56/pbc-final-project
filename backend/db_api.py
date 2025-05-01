@@ -140,4 +140,35 @@ def send_email(sender: str, receiver: str, title: str, content: str):
     print("email sent!")
 
 def fetch_all_email(mode: str, username: str):
-    pass
+
+    conn = sqlite3.connect('assets/users.db')
+    cursor = conn.cursor()
+    
+    if mode == 'send':
+        cursor.execute("SELECT sends FROM users WHERE username = ?", (username,))
+    else:
+        cursor.execute("SELECT receives FROM users WHERE username = ?", (username,))
+
+    result = cursor.fetchone()
+
+    conn.close()
+
+    if result:
+
+        uid_list = json.loads(result[0])
+
+        conn_email = sqlite3.connect('assets/emails.db')
+
+        cursor_email = conn_email.cursor()
+
+        email_list = []
+
+        for uid in uid_list:
+            cursor_email.execute("SELECT * FROM emails WHERE uid = ?", (uid,))
+            email = cursor_email.fetchone()
+            email_list.append(email)
+
+        return email_list
+    
+    else:
+        return None
