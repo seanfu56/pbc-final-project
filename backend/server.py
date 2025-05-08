@@ -15,7 +15,9 @@ class SimpleHandler(BaseHTTPRequestHandler):
             username = data.get("username", [""])[0]
             password = data.get("password", [""])[0]
             print(f"[CREATE] 建立帳號：{username}，密碼：{password}")
+            create = db_api.create_user(username, password)
             self._send_response({"status": "ok", "msg": "帳號已建立"})
+
         
         elif self.path == '/login':
             username = data.get("username", [""])[0]
@@ -82,6 +84,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
             msg = data.get("message", [""])[0]
             print(f"[MESSAGE] 收到訊息：{msg}")
             self._send_response({"status": "ok", "msg": "訊息收到"})
+
 
         else:
             self._send_response({"status": "error", "msg": "未知路由"}, code=404)
