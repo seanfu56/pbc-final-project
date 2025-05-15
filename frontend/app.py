@@ -8,6 +8,7 @@ import datetime
 from container.compose_tab import ComposeTab
 from container.receive_tab import InboxTab
 from container.send_tab import SentTab
+from container.draft_tab import DraftTab
 
 class LoginWindow(QWidget):
     def __init__(self):
@@ -73,11 +74,20 @@ class LoginWindow(QWidget):
         self.main_window.setWindowTitle("信箱系統")
         layout = QVBoxLayout()
 
-        tabs = QTabWidget()
-        tabs.addTab(InboxTab(username), "📥 收件匣")
-        tabs.addTab(SentTab(username), "📤 已寄信")
-        tabs.addTab(ComposeTab(username), "✉️ 寫新信")
-        layout.addWidget(tabs)
+        self.tabs = QTabWidget()
+        self.inbox_tab = InboxTab(username)
+        self.sent_tab = SentTab(username)
+        self.compose_tab = ComposeTab(username)
+        self.draft_tab = DraftTab(username)
+
+        # 當草稿被選取時，切換到撰寫頁並填入資料
+        self.draft_tab.draft_selected.connect(self.handle_draft_selected)
+
+        self.tabs.addTab(self.inbox_tab, "📥 收件匣")
+        self.tabs.addTab(self.sent_tab, "📤 已寄信")
+        self.tabs.addTab(self.draft_tab, "草稿")
+        self.tabs.addTab(self.compose_tab, "✉️ 寫新信")
+        layout.addWidget(self.tabs)
 
         logout_btn = QPushButton("登出")
         logout_btn.clicked.connect(self.logout)
@@ -90,6 +100,10 @@ class LoginWindow(QWidget):
     def logout(self):
         self.main_window.close()
         self.show()
+
+    def handle_draft_selected(self, email):
+        self.compose_tab.load_email(email)
+        self.tabs.setCurrentWidget(self.compose_tab)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

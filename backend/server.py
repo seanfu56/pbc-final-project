@@ -1,9 +1,9 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import urllib.parse
 import json
-
+import base64
 import db_api
-
+from utils.spam import spam_detection
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         content_length = int(self.headers['Content-Length'])
@@ -54,7 +54,47 @@ class SimpleHandler(BaseHTTPRequestHandler):
                     "receiver": row[2],
                     "title": row[3],
                     "content": row[4],
-                    "timestamp": row[5]
+                    "timestamp": row[5],
+                    "system_type": row[6],
+                    "user_type": row[7],
+                    "image_uids": row[8],
+                    "image_list": []
+                }
+                for row in email_list
+            ]
+
+            for email in email_list:
+                print('USER TYPE', email['user_type'])
+
+            for email in email_list:
+                if email['image_uids'] is not None:
+                    print("EMAIL UUID", email['image_uids'], type(email["image_uids"]))
+                    email_image_uid_list = json.loads(email['image_uids'])
+                    for email_image_uid in email_image_uid_list:
+                        image_data = db_api.get_image(email_image_uid)
+                        image_str = image_data[2]
+                        email["image_list"].append(image_str)
+                    #     email_image_str_list.append(image_str)
+                    # email['image_list'] = email_image_str_list
+
+            self._send_response({
+                "status": "ok",
+                "emails": email_list
+            })
+
+        elif self.path == '/fetch_draft':
+            username = data.get('username', [""])[0]
+            email_list = db_api.fetch_all_draft(username)
+
+            email_list = [
+                {
+                    "uid": row[0],
+                    "sender": row[1],
+                    "receiver": row[2],
+                    "title": row[3],
+                    "content": row[4],
+                    "timestamp": row[5],
+                    "image_uids": row[6],
                 }
                 for row in email_list
             ]
@@ -65,17 +105,49 @@ class SimpleHandler(BaseHTTPRequestHandler):
                 "emails": email_list
             })
 
+        elif self.path == '/trash':
+            content_type = self.headers.get('Content-Type', '')
+            
+            if 'application/json' in content_type:
+                data = json.loads(body.decode('utf-8'))  # ✅ 正確解析 JSON
+            else:
+                data = urllib.parse.parse_qs(body.decode())  # fallback for form data
+
+            email_id = data.get("email_id", "")[0]
+            print("TRASH", email_id)
+            db_api.change_email_user_type(
+                mode='trash',
+                id=email_id
+            )
+
+            self._send_response({
+                'status': 'ok',
+            })
+
         elif self.path == '/send':
-            sender = data.get("sender", [""])[0]
-            receiver = data.get("receiver", [""])[0]
-            title = data.get("title", [""])[0]
-            content = data.get("content", [""])[0]
+            content_type = self.headers.get('Content-Type', '')
+            
+            if 'application/json' in content_type:
+                data = json.loads(body.decode('utf-8'))  # ✅ 正確解析 JSON
+            else:
+                data = urllib.parse.parse_qs(body.decode())  # fallback for form data
+
+            sender = data.get("sender", "")
+            receiver = data.get("receiver", "")
+            title = data.get("title", "")
+            content = data.get("content", "")
+            image_list = data.get("image_list", [])
+
+            print(f"SEND email from {sender} to {receiver}")
+            print(f"image_list length: {len(image_list)}")
 
             db_api.send_email(
                 sender=sender,
                 receiver=receiver,
                 title=title,
-                content=content
+                content=content,
+                system_type=spam_detection(),
+                image=image_list
             )
 
             self._send_response({"status": "ok", "msg": "received"})
@@ -85,6 +157,20 @@ class SimpleHandler(BaseHTTPRequestHandler):
             print(f"[MESSAGE] 收到訊息：{msg}")
             self._send_response({"status": "ok", "msg": "訊息收到"})
 
+        elif self.path == '/draft':
+            sender = data.get("sender", [""])[0]
+            receiver = data.get("receiver", [""])[0]
+            title = data.get("title", [""])[0]
+            content = data.get("content", [""])[0]
+
+            db_api.send_draft(
+                sender=sender,
+                receiver=receiver,
+                title=title,
+                content=content
+            )
+
+            self._send_response({'status': 'ok', 'msg': '草稿儲存成功'})
 
         else:
             self._send_response({"status": "error", "msg": "未知路由"}, code=404)

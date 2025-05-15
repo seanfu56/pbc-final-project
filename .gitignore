@@ -1,5 +1,6 @@
 
 *.db
+*.DS_store
 */test.py
 # Byte-compiled / optimized / DLL files
 __pycache__/
