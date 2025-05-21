@@ -2,7 +2,7 @@ import sqlite3
 import bcrypt
 import uuid
 import json
-from typing import List
+from typing import List, Union
 from datetime import datetime
 
 def delete_user_table():
@@ -112,7 +112,7 @@ def user_exist(username: str):
     else:
         return False
     
-def process_image(images: None | List[str], email_uid: str):
+def process_image(images: Union[None, List[str]], email_uid: str):
 
     if images is None:
         return json.dumps([])
@@ -142,7 +142,7 @@ def process_image(images: None | List[str], email_uid: str):
 
         
 
-def send_email(sender: str, receiver: str, title: str, content: str, system_type: str, image: None | List[str]):
+def send_email(sender: str, receiver: str, title: str, content: str, system_type: str, image: Union[None, List[str]]):
 
     if user_exist(sender) and user_exist(receiver):
 
@@ -280,7 +280,7 @@ def create_draft_table():
     conn.close()
 
 
-def send_draft(sender: str, receiver: str, title: str, content: str, image: None | str| List[str]):
+def send_draft(sender: str, receiver: str, title: str, content: str, image: Union[ None, str, List[str]]):
 
     uid = str(uuid.uuid4())
     timestamp = float(datetime.now().timestamp())
@@ -380,3 +380,4 @@ def get_image(uid):
     conn.close()
 
     return image
+
