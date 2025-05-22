@@ -23,15 +23,18 @@ class SimpleHandler(BaseHTTPRequestHandler):
             username = data.get("username", [""])[0]
             password = data.get("password", [""])[0]
             print(f'Login. Username: {username}, Password: {password}')
-            login_success = db_api.login(
+            login_success, categories = db_api.login(
                 username=username,
                 input_password=password
             )
+            categories = categories[0]
+            print("categories: ", categories, json.loads(categories))
             if login_success:
                 self._send_response(
                     {
                         "status": "ok",
-                        "msg": "login successfully"
+                        "msg": "login successfully",
+                        "categories": categories
                     }
                 )
             else:
@@ -57,7 +60,9 @@ class SimpleHandler(BaseHTTPRequestHandler):
                     "timestamp": row[5],
                     "system_type": row[6],
                     "user_type": row[7],
-                    "image_uids": row[8],
+                    "read_status": row[8],
+                    "image_uids": row[9],
+                    "category": row[10],
                     "image_list": []
                 }
                 for row in email_list
@@ -171,6 +176,40 @@ class SimpleHandler(BaseHTTPRequestHandler):
             )
 
             self._send_response({'status': 'ok', 'msg': '草稿儲存成功'})
+
+        elif self.path == '/mark_read':
+            email_id = data.get("email_id", [""])[0]
+            read_status = data.get("read_status", [""])[0]
+
+            if not read_status:
+                read_status_int = 0
+            else:
+                read_status_int = 1
+
+            db_api.mark_read(email_id, read_status_int)
+
+            self._send_response({'status': 'ok', 'msg': '已讀狀態更新'})
+
+        elif self.path == '/new_cat':
+            username = data.get("username", [""])[0]
+            category = data.get("category", [""])[0]
+            color = data.get("color", [""])[0]
+
+            db_api.create_category(username, category, color)
+
+            self._send_response({'status': 'ok', 'msg': '新增類別成功'})
+
+        # elif self.path == '/del_cat':
+        elif self.path == '/set_cat':
+            username = data.get("username", [""])[0]
+            email_id = data.get("email_id", [""])[0]
+            category = data.get("category", [""])[0]
+            print("set_cat:", username, email_id, category)
+            db_api.set_category(
+                username, email_id, category
+            )
+
+            self._send_response({'status': 'ok', 'msg': '成功修改類別'})
 
         else:
             self._send_response({"status": "error", "msg": "未知路由"}, code=404)
