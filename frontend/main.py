@@ -731,12 +731,6 @@ class MailSystem(QMainWindow):
         self.mark_unread_btn.setEnabled(False)
         self.search_category_layout.addWidget(self.mark_unread_btn)
 
-        self.mark_as_spam_btn = QPushButton("標記為垃圾郵件")
-        self.mark_as_spam_btn.clicked.connect(self.mark_as_spam)
-        self.mark_as_spam_btn.setVisible(True)
-        self.mark_as_spam_btn.setEnabled(False)
-        self.search_category_layout.addWidget(self.mark_as_spam_btn)
-
         self.set_category_btn = QPushButton("設定類別")
         self.set_category_btn.clicked.connect(self.open_set_category_dialog)
         self.set_category_btn.setVisible(True)
@@ -801,7 +795,11 @@ class MailSystem(QMainWindow):
         # 撰寫按鈕
         self.compose_btn = QPushButton("撰寫郵件")
         self.compose_btn.clicked.connect(self.show_compose)
-        self.content_layout.addWidget(self.compose_btn)
+        self.search_category_layout.addWidget(self.refresh_btn)
+        self.compose_btn = QPushButton("撰寫郵件")
+        self.compose_btn.clicked.connect(self.show_compose)
+        self.search_category_layout.addWidget(self.compose_btn)  # 添加這一行
+        
 
         # 郵件內容顯示
         self.email_content_widget = QWidget()
@@ -1159,9 +1157,6 @@ class MailSystem(QMainWindow):
 
         self.mark_unread_btn.setVisible(is_inbox)
         self.mark_unread_btn.setEnabled(is_inbox and has_target_emails)
-
-        self.mark_as_spam_btn.setVisible(is_inbox_or_trash)
-        self.mark_as_spam_btn.setEnabled(is_inbox_or_trash and has_target_emails)
 
         self.set_category_btn.setVisible(is_inbox)
         self.set_category_btn.setEnabled(is_inbox and has_target_emails)

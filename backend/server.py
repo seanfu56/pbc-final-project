@@ -151,7 +151,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
                 receiver=receiver,
                 title=title,
                 content=content,
-                system_type=spam_detection(),
+                system_type=spam_detection(''),
                 image=image_list
             )
 
