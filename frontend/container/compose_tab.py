@@ -2,9 +2,9 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QTextEdit, 
 from PyQt5.QtGui import QTextCharFormat, QColor, QTextCursor
 from PyQt5.QtCore import Qt, QTimer
 import requests
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
-
+import llama_cpp
+import time
+from transformers import pipeline
 # ========================== 主介面類別 ==========================
 class ComposeTab(QWidget):
     def __init__(self, sender_username):
@@ -55,10 +55,16 @@ class ComposeTab(QWidget):
 
     # ========================== 模型初始化 ==========================
     def init_model(self):
-        self.tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen1.5-0.5B", trust_remote_code=True)
-        self.model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen1.5-0.5B", trust_remote_code=True).eval()
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model.to(self.device)
+
+        model_tag = "pszemraj/opt-350m-email-generation"
+        self.generator = pipeline(
+                    'text-generation', 
+                    model=model_tag, 
+                    use_fast=False,
+                    do_sample=False,
+                    early_stopping=True,
+                    )
+                    
 
     # ========================== 預測狀態初始化 ==========================
     def init_state(self):
@@ -101,25 +107,14 @@ class ComposeTab(QWidget):
             self.clear_prediction()
             return
 
-        prompt = (
-            "你是一位擅長撰寫電子郵件的助手。\n"
-            "請根據以下的內容，用自然且通順的語氣繼續補完這封信。\n"
-            "注意：若內容是英文，請保持英文風格；若是中文，請使用繁體中文。\n\n"
-            f"信件開頭如下：\n{input_text}\n\n請接著繼續寫下去："
-            )
+        prompt = input_text
+        
 
         try:
-            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=20,
-                    do_sample=True,
-                    temperature=0.5,
-                    top_p=0.9
-                )
-            generated_tokens = outputs[0][inputs['input_ids'].shape[-1]:]
-            generated = self.tokenizer.decode(generated_tokens, skip_special_tokens=True).strip()
+            outputs = self.generator(prompt, max_new_tokens=5)
+            generated_tokens = outputs[0]['generated_text']
+            print(generated_tokens)
+            generated = generated_tokens.strip()
 
             # 嘗試移除與 user_text 重疊的開頭部分
             overlap_len = len(self.user_text)

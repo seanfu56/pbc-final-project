@@ -22,7 +22,8 @@ def create_user_table():
             password TEXT NOT NULL,
             sends TEXT,
             receives TEXT,
-            drafts TEXT
+            drafts TEXT,
+            categories TEXT   
         )
     ''')
     conn.commit()
@@ -37,9 +38,48 @@ def create_user(username: str, password: str):
         print("Username already exists.")
     else:
         hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
-        cursor.execute("INSERT INTO users (username, password, sends, receives, drafts) VALUES (?, ?, ?, ?, ?)", (username, hashed_pw, json.dumps([]), json.dumps([]), json.dumps([])))
+        cursor.execute("INSERT INTO users (username, password, sends, receives, drafts, categories) VALUES (?, ?, ?, ?, ?, ?)", (username, hashed_pw, json.dumps([]), json.dumps([]), json.dumps([]), json.dumps([])))
         conn.commit()
         print("Account created successfully.")
+
+    conn.close()
+
+def create_category(username: str, category: str, color: str):
+    conn = sqlite3.connect('assets/users.db')
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT categories FROM users WHERE username = ?', (username,))
+    result = cursor.fetchone()
+
+    if result:
+        categories = json.loads(result[0])
+        categories.append([category, color])
+        categories_str = json.dumps(categories)
+
+        cursor.execute('UPDATE users SET categories = ? WHERE username = ?', (categories_str, username))
+
+        conn.commit()
+
+    conn.close()
+
+def set_category(username: str, email_id: str, category: str):
+    conn = sqlite3.connect('assets/emails.db')
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT category FROM emails WHERE uid = ?', (email_id,))
+
+    result = cursor.fetchone()
+
+    if result:
+
+        cursor.execute('UPDATE emails SET category = ? WHERE uid = ?', (category, email_id))
+        conn.commit()
+
+        print("SUCCESS TO SET CATEGORY")
+
+    else:
+
+        print("FAIL TO SET CATEGORY")
 
     conn.close()
 
@@ -59,6 +99,8 @@ def login(username: str, input_password: str):
         if bcrypt.checkpw(input_password.encode(), correct_password):
             print("Login success")
             success = True
+            cursor.execute('SELECT categories FROM users WHERE username = ?', (username,))
+            result = cursor.fetchone()
         else:
             print("Wrong password")
     else:
@@ -66,7 +108,7 @@ def login(username: str, input_password: str):
 
     conn.close()
 
-    return success
+    return success, result
 
 def delete_email_table():
     conn = sqlite3.connect('assets/emails.db')
@@ -92,7 +134,9 @@ def create_email_table():
             timestamp REAL NOT NULL,
             system_type TEXT NOT NULL,
             user_type TEXT NOT NULL,
-            images TEXT
+            read_status INTEGER NOT NULL,
+            images TEXT,
+            category TEXT
         )
     ''')
     conn.commit()
@@ -142,7 +186,7 @@ def process_image(images: Union[None, List[str]], email_uid: str):
 
         
 
-def send_email(sender: str, receiver: str, title: str, content: str, system_type: str, image: Union[None, List[str]]):
+def send_email(sender: str, receiver: str, title: str, content: str, system_type: str, image: Union[None, List[str]], category = ''):
 
     if user_exist(sender) and user_exist(receiver):
 
@@ -157,9 +201,9 @@ def send_email(sender: str, receiver: str, title: str, content: str, system_type
         cursor = conn.cursor()
 
         cursor.execute('''
-            INSERT INTO emails (uid, sender, receiver, title, content, timestamp, system_type, user_type, images)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (uid, sender, receiver, title, content, timestamp, system_type, user_type, image_uid))
+            INSERT INTO emails (uid, sender, receiver, title, content, timestamp, system_type, user_type, read_status, images, category)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (uid, sender, receiver, title, content, timestamp, system_type, user_type, 0, image_uid, category))
         
         conn.commit()
         conn.close()
@@ -203,6 +247,23 @@ def send_email(sender: str, receiver: str, title: str, content: str, system_type
     else:
 
         return False 
+    
+def mark_read(email_id: str, read_status: int):
+
+    conn = sqlite3.connect('assets/emails.db')
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT read_status FROM emails WHERE uid = ?', (email_id,))
+
+    result = cursor.fetchone()
+
+    if result:
+
+        cursor.execute('UPDATE emails SET read_status = ? WHERE uid = ?', (read_status, email_id))
+
+    conn.commit()
+    conn.close()
+
 
 def fetch_all_email(mode: str, username: str):
 

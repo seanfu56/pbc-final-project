@@ -3,14 +3,18 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QGroupBox, QDialog,
     QLineEdit, QTextEdit, QPushButton, QMessageBox, QFileDialog, QListWidget, QListWidgetItem,
     QStackedWidget, QTabWidget, QSizePolicy, QSplitter, QApplication, QFormLayout, QColorDialog,
-    QInputDialog, QDialogButtonBox, QComboBox, QFontDialog
+    QInputDialog, QDialogButtonBox, QComboBox, QFontDialog, 
 )
-from PyQt5.QtGui import QPixmap, QIcon, QColor, QPainter, QImage, QFont
+from PyQt5.QtGui import QPixmap, QIcon, QColor, QPainter, QImage, QFont, QTextCharFormat, QTextCursor
 from PyQt5.QtCore import Qt, QByteArray, pyqtSignal, QSignalBlocker, QPropertyAnimation, QSize, QTimer
 import base64
 import requests
 from datetime import datetime
 import time
+from transformers import pipeline
+import json
+
+from container.ai_helper import DiscussionDialog
 
 # 登入窗口類
 class LoginWindow(QWidget):
@@ -53,7 +57,10 @@ class LoginWindow(QWidget):
             r = requests.post("http://localhost:8080/login", data={"username": username, "password": password})
             print(f"Login response: status_code={r.status_code}, response={r.text}")
             if r.status_code == 200 and r.json().get("status") == "ok":
-                self.goto_main_window(username)
+                categories = r.json().get("categories")
+                categories = json.loads(categories)
+                print("categories: ", categories)
+                self.goto_main_window(username, categories)
             elif r.status_code == 200 and r.json().get("status") == "fail":
                 self.message_label.setText("Failed to login: Incorrect username or password")
             else:
@@ -73,9 +80,9 @@ class LoginWindow(QWidget):
         except requests.exceptions.RequestException as e:
             self.message_label.setText(f"Connection error: {str(e)}")
 
-    def goto_main_window(self, username):
+    def goto_main_window(self, username, categories):
         self.hide()
-        self.main_window = MailSystem(username)
+        self.main_window = MailSystem(username, categories)
         self.main_window.logout_signal.connect(self.show)
         self.main_window.show()
 
@@ -153,6 +160,7 @@ class CategoryDialog(QDialog):
         color = QColorDialog.getColor(parent=self)
         if color.isValid():
             self.categories.append([name, color.name()])
+
             self.update_category_list()
 
     def delete_category(self):
@@ -200,6 +208,8 @@ class ComposeTab(QWidget):
 
         self.content_input = QTextEdit()
         self.content_input.setPlaceholderText("信件內容")
+        self.content_input.textChanged.connect(self.handle_text_changed)
+        self.content_input.installEventFilter(self)
         layout.addWidget(self.content_input, stretch=1)
 
         # 附件區域
@@ -215,17 +225,203 @@ class ComposeTab(QWidget):
         btn_layout = QHBoxLayout()
         send_button = QPushButton("寄出")
         send_button.clicked.connect(self.send_email)
+        self.toggle_button = QPushButton("預測：開啟")
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setChecked(True)
+        self.toggle_button.clicked.connect(self.toggle_prediction)
+
+        self.debounce_timer = QTimer()
+        self.debounce_timer.setSingleShot(True)
+        self.debounce_timer.timeout.connect(self.trigger_suggestion)
+
         store_button = QPushButton("儲存草稿")
         store_button.clicked.connect(self.send_draft)
         close_button = QPushButton("關閉")
         close_button.clicked.connect(lambda: self.mail_system.hide_compose())
         btn_layout.addWidget(send_button)
+        btn_layout.addWidget(self.toggle_button)
         btn_layout.addWidget(store_button)
         btn_layout.addWidget(close_button)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
-
         self.setLayout(layout)
+
+        model_tag = 'pszemraj/opt-350m-email-generation'
+        self.generator = pipeline(
+            'text-generation',
+            model=model_tag,
+            use_fast = False,
+            do_sample = False,
+            early_stopping = True,
+        )
+
+        self.init_state()
+
+    def init_state(self):
+        self.user_text = ""
+        self.suggestion = ""
+        self.prediction_enabled = True
+        self.prediction_start_pos = None
+        self.is_handling_preview = False
+        self.last_predict_time = time.time()
+
+    def toggle_prediction(self):
+        self.prediction_enabled = self.toggle_button.isChecked()
+        if self.prediction_enabled:
+            self.toggle_button.setText("預測：開啟")
+        else:
+            self.toggle_button.setText("預測：關閉")
+            self.clear_prediction()
+
+    def handle_text_changed(self):
+
+        if not self.prediction_enabled or self.is_handling_preview:
+            return
+
+        current_text = self.get_user_text_only()
+        if self.suggestion:
+            self.clear_prediction()
+
+        if current_text != self.user_text:
+            self.user_text = current_text
+            self.clear_prediction()
+            self.debounce_timer.start(400)
+
+    # ========================== 執行文字預測 ==========================
+    def trigger_suggestion(self):
+
+        now = time.time()
+        print(now - self.last_predict_time)
+        if now - self.last_predict_time < 3:
+            return
+        else:
+            self.last_predict_time = now
+
+        if not self.prediction_enabled:
+            return
+
+        input_text = self.user_text.strip()
+        if len(input_text) < 10:
+            self.clear_prediction()
+            return
+
+        prompt = input_text
+        
+
+        try:
+            outputs = self.generator(prompt, max_new_tokens=5)
+            generated_tokens = outputs[0]['generated_text']
+            print(generated_tokens)
+            generated = generated_tokens.strip()
+
+            # 嘗試移除與 user_text 重疊的開頭部分
+            overlap_len = len(self.user_text)
+            if generated.startswith(self.user_text):
+                generated = generated[overlap_len:]
+
+            # 進一步移除完全重複的片段（例如模型重複輸出了一句）
+            for i in range(len(self.user_text)):
+                suffix = self.user_text[i:]
+                if generated.startswith(suffix):
+                    generated = generated[len(suffix):]
+                    break
+
+            self.suggestion = generated
+            
+        except Exception as e:
+            print("產生建議時發生錯誤：", e)
+            self.suggestion = ""
+
+        self.update_preview()
+
+    # ========================== 顯示預測文字 ==========================
+    def update_preview(self):
+        if not self.suggestion:
+            self.clear_prediction()
+            return
+
+        self.is_handling_preview = True
+
+        cursor = self.content_input.textCursor()
+        original_position = cursor.position()
+
+        cursor.movePosition(QTextCursor.End)
+        self.prediction_start_pos = cursor.position()
+
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor("gray"))
+        cursor.insertText(self.suggestion, fmt)
+
+        cursor.setPosition(original_position)
+        self.content_input.setTextCursor(cursor)
+
+        self.is_handling_preview = False
+
+    # ========================== 取得使用者真實輸入（不含預測） ==========================
+    def get_user_text_only(self):
+        if self.prediction_start_pos is None:
+            return self.content_input.toPlainText()
+        else:
+            cursor = self.content_input.textCursor()
+            cursor.setPosition(0)
+            cursor.setPosition(self.prediction_start_pos, QTextCursor.KeepAnchor)
+            return cursor.selectedText()
+
+    # ========================== 清除預測文字 ==========================
+    def clear_prediction(self):
+        if self.prediction_start_pos is not None:
+            self.is_handling_preview = True
+            cursor = self.content_input.textCursor()
+            cursor.setPosition(self.prediction_start_pos)
+            cursor.movePosition(QTextCursor.End, QTextCursor.KeepAnchor)
+            cursor.removeSelectedText()
+            self.prediction_start_pos = None
+            self.suggestion = ""
+            self.is_handling_preview = False
+   
+    # ==========================
+    def apply_suggestion(self):
+        print("call apply suggestion")
+        if not self.suggestion or self.prediction_start_pos is None:
+            return
+
+        self.is_handling_preview = True
+
+        cursor = self.content_input.textCursor()
+        cursor.beginEditBlock()
+
+        # 移除灰色預測文字
+        cursor.setPosition(self.prediction_start_pos)
+        cursor.movePosition(QTextCursor.End, QTextCursor.KeepAnchor)
+        cursor.removeSelectedText()
+
+        # 插入黑色正式文字
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor("black"))
+        cursor.insertText(self.suggestion, fmt)
+
+        cursor.endEditBlock()
+
+        # 更新狀態
+        self.user_text = self.get_user_text_only()
+        self.suggestion = ""
+        self.prediction_start_pos = None
+        self.is_handling_preview = False
+
+        # 重新啟動預測
+        self.debounce_timer.start(400)
+
+    # ========================== 處理鍵盤事件（包含 Tab 鍵） ==========================
+    def eventFilter(self, obj, event):
+        if obj == self.content_input and event.type() == event.KeyPress:
+            if event.key() == Qt.Key_Tab and self.suggestion:
+                self.apply_suggestion()
+                return True  # 告訴 Qt：事件已處理，不要再傳給其他元件
+            elif event.key() in [Qt.Key_Left, Qt.Key_Right, Qt.Key_Up, Qt.Key_Down, Qt.Key_Backspace, Qt.Key_Delete]:
+                if self.suggestion:
+                    self.clear_prediction()
+        return super().eventFilter(obj, event)
+    
 
     def attach_image(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "選擇圖片", "", "Images (*.png *.jpg *.jpeg *.bmp *.gif)")
@@ -276,7 +472,7 @@ class ComposeTab(QWidget):
                 self.mail_system.hide_compose()
                 self.mail_system.refresh_ui()
             else:
-                QMessageBox.warning(self, "失敗", f"儲存草稿失敗：{r.text}")
+                QMessageBox.warning(self, "失敗",  f"儲存草稿失敗：{r.text}")
         except requests.exceptions.RequestException as e:
             QMessageBox.warning(self, "錯誤", f"無法連線到後端伺服器：{str(e)}")
 
@@ -302,7 +498,7 @@ class ComposeTab(QWidget):
 class MailSystem(QMainWindow):
     logout_signal = pyqtSignal()
 
-    def __init__(self, username):
+    def __init__(self, username, categories):
         super().__init__()
         print(f"Initializing MailSystem for {username} at {datetime.now()}")
         self.setWindowTitle("郵件系統")
@@ -319,6 +515,7 @@ class MailSystem(QMainWindow):
             ["學校", "#00FF00"],
             ["居家", "#0000FF"]
         ]
+        self.categories = categories
         self.trash_manual = []
         self.sidebar_expanded = False
         self.is_displaying_email = False
@@ -650,6 +847,9 @@ class MailSystem(QMainWindow):
         self.content_set_category_combo.addItem("無類別")
         self.email_actions_layout.addWidget(self.reply_btn)
         self.email_actions_layout.addWidget(self.forward_btn)
+        self.discuss_btn = QPushButton("AI助手")
+        self.discuss_btn.clicked.connect(self.open_discussion_dialog)
+        self.email_actions_layout.addWidget(self.discuss_btn)
         self.email_actions_layout.addWidget(self.content_restore_btn)
         self.email_actions_layout.addWidget(self.content_set_category_combo)
         self.email_actions_layout.addStretch()
@@ -1013,12 +1213,21 @@ class MailSystem(QMainWindow):
             return
         category = "" if category == "無類別" else category
         count = 0
-        for email in emails:
-            email["category"] = category
-            count += 1
+        try:
+            for email in emails:
+                print("set_category, email.get('uid')", email.get('uid'))
+                payload = {'username': self.username, 'email_id': email.get('uid'), 'category': category}
+                r = requests.post('http://localhost:8080/set_cat', data=payload)
+                print(r.json())
+                email["category"] = category
+                count += 1
+        except requests.exceptions.RequestException as e:
+            print(e)
+            QMessageBox.warning(self, "修改類別錯誤")
         self.exit_selection_mode()
         self.refresh_ui()
         QMessageBox.information(self, "成功", f"{count} 封郵件已設為類別：{category or '無'}")
+        
 
     def load_email(self, item):
         index = self.email_list.row(item)
@@ -1348,6 +1557,14 @@ class MailSystem(QMainWindow):
         self.email_content_widget.update()
         self.content_widget.update()
         QApplication.processEvents()
+
+    def open_discussion_dialog(self):
+        if not self.current_email:
+            QMessageBox.warning(self, "錯誤", "請先選擇一封郵件")
+            return
+        email_text = self.current_email.get("content")
+        dialog = DiscussionDialog(email_text, self)
+        dialog.exec_()
 
     def logout(self):
         self.logout_signal.emit()

@@ -30,6 +30,30 @@ db_api.create_user(
     password='34567'
 )
 
+db_api.create_category(
+    username='andy',
+    category='工作',
+    color='#FF0000'
+)
+
+db_api.create_category(
+    username='andy',
+    category='學校',
+    color='#00FF00'
+)
+
+db_api.create_category(
+    username='andy',
+    category='居家',
+    color='#0000FF'
+)
+
+db_api.create_category(
+    username='andy',
+    category='測試',
+    color='#ABCDEF'
+)
+
 db_api.send_email(
     sender='andy',
     receiver='ben',
@@ -44,7 +68,8 @@ db_api.send_email(
     title='Test Email 2',
     content='Just for testing, too.',
     system_type='spam',
-    image=img_file_to_str('assets/figs/vase.png')
+    image=img_file_to_str('assets/figs/vase.png'),
+    category='工作'
 )
 db_api.send_email(
     sender='ben',
@@ -52,13 +77,14 @@ db_api.send_email(
     title='Test Email 3',
     content='Just for testing xxxxx, too.',
     system_type='normal',
-    image=img_file_to_str('assets/figs/forest.png')
+    image=img_file_to_str('assets/figs/forest.png'),
+    category='學校'
 )
 db_api.send_email(
     sender='ben',
     receiver='andy',
     title='Test Email 4',
-    content='Just for testing ooooo, too.',
+    content='I would like to invite you to the conference next Wednesday held in Vancouver.',
     system_type='normal',
     image=None
 )
