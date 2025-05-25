@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QGroupBox, QDialog,
     QLineEdit, QTextEdit, QPushButton, QMessageBox, QFileDialog, QListWidget, QListWidgetItem,
     QStackedWidget, QTabWidget, QSizePolicy, QSplitter, QApplication, QFormLayout, QColorDialog,
-    QInputDialog, QDialogButtonBox, QComboBox, QFontDialog, 
+    QInputDialog, QDialogButtonBox, QComboBox, QFontDialog, QGraphicsBlurEffect
 )
 from PyQt5.QtGui import QPixmap, QIcon, QColor, QPainter, QImage, QFont, QTextCharFormat, QTextCursor
 from PyQt5.QtCore import Qt, QByteArray, pyqtSignal, QSignalBlocker, QPropertyAnimation, QSize, QTimer
@@ -13,10 +13,44 @@ from datetime import datetime
 import time
 from transformers import pipeline
 import json
-
+# from components.email import EmailDialog
 from container.ai_helper import DiscussionDialog
 
 # 登入窗口類
+
+class ClickableBlurImage(QWidget):
+    def __init__(self, pixmap: QPixmap, caption: str = "", parent=None):
+        super().__init__(parent)
+        self.original_pixmap = pixmap
+        self.clicked = False
+
+        # 主 layout
+        self.layout = QVBoxLayout()
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(self.layout)
+
+        # 圖片 Label
+        self.image_label = QLabel()
+        self.image_label.setPixmap(self.original_pixmap.scaledToWidth(400, Qt.SmoothTransformation))
+        self.image_label.setAlignment(Qt.AlignCenter)
+        self.layout.addWidget(self.image_label)
+
+        # 模糊效果
+        self.blur_effect = QGraphicsBlurEffect()
+        self.blur_effect.setBlurRadius(10)
+        self.image_label.setGraphicsEffect(self.blur_effect)
+
+        # Caption Label
+        self.caption_label = QLabel(caption)
+        self.caption_label.setAlignment(Qt.AlignCenter)
+        self.layout.addWidget(self.caption_label)
+
+    def mousePressEvent(self, event):
+        if not self.clicked:
+            self.image_label.setGraphicsEffect(None)
+            self.image_label.setPixmap(self.original_pixmap.scaledToWidth(400, Qt.SmoothTransformation))
+            self.clicked = True
+
 class LoginWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -483,9 +517,22 @@ class ComposeTab(QWidget):
         self.image_list = email.get("image_list", [])
         self.attachment_preview.clear()
         if self.image_list:
+            # pixmap = QPixmap()
+            # pixmap.loadFromData(base64.b64decode(self.image_list[0]))
+            # self.attachment_preview.setPixmap(pixmap.scaledToWidth(100))
+
             pixmap = QPixmap()
             pixmap.loadFromData(base64.b64decode(self.image_list[0]))
-            self.attachment_preview.setPixmap(pixmap.scaledToWidth(100))
+
+            # 用新的 ClickableBlurImage 取代 QLabel
+            blur_img = ClickableBlurImage(pixmap)
+            
+            # 移除原來 QLabel
+            self.attachment_preview.deleteLater()
+            
+            # 換成新的 ClickableBlurImage
+            self.attachment_preview = blur_img
+            self.layout().insertWidget(3, self.attachment_preview) 
 
     def clear_inputs(self):
         self.to_input.clear()
@@ -1274,9 +1321,9 @@ class MailSystem(QMainWindow):
                     try:
                         pixmap = QPixmap()
                         pixmap.loadFromData(base64.b64decode(img_str))
-                        img_label = QLabel()
-                        img_label.setPixmap(pixmap.scaledToWidth(400))
-                        self.email_content_layout.addWidget(img_label)
+                        caption = f"圖片 {idx+1}"  # 你也可以自定文字或從後端取得
+                        blur_widget = ClickableBlurImage(pixmap, caption)
+                        self.email_content_layout.addWidget(blur_widget)
                     except Exception as e:
                         self.email_content_layout.addWidget(QLabel(f"⚠️ 圖片 {idx+1} 載入失敗：{e}"))
 
