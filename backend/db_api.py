@@ -136,7 +136,8 @@ def create_email_table():
             user_type TEXT NOT NULL,
             read_status INTEGER NOT NULL,
             images TEXT,
-            category TEXT
+            category TEXT,
+            recall INTEGER
         )
     ''')
     conn.commit()
@@ -201,9 +202,9 @@ def send_email(sender: str, receiver: str, title: str, content: str, system_type
         cursor = conn.cursor()
 
         cursor.execute('''
-            INSERT INTO emails (uid, sender, receiver, title, content, timestamp, system_type, user_type, read_status, images, category)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (uid, sender, receiver, title, content, timestamp, system_type, user_type, 0, image_uid, category))
+            INSERT INTO emails (uid, sender, receiver, title, content, timestamp, system_type, user_type, read_status, images, category, recall)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (uid, sender, receiver, title, content, timestamp, system_type, user_type, 0, image_uid, category, 0))
         
         conn.commit()
         conn.close()
@@ -441,4 +442,19 @@ def get_image(uid):
     conn.close()
 
     return image
+
+def recall(email_id):
+
+    conn = sqlite3.connect('assets/emails.db')
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM emails WHERE uid = ?", (email_id,))
+
+    result = cursor.fetchone()
+
+    if result:
+        cursor.execute("UPDATE emails SET recall = ? WHERE uid = ?", (1, email_id))
+
+        conn.commit()
+        conn.close()
 

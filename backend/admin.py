@@ -99,17 +99,28 @@ db_api.send_email(
     receiver='andy',
     title='Test Email 2',
     content='Just for testing, too.',
-    system_type='spam',
+    system_type='normal',
     image=img_file_to_str('assets/figs/vase.png'),
     category='工作'
 )
+
+db_api.send_email(
+    sender='ben',
+    receiver='andy',
+    title='Hello',
+    content='How are you!',
+    system_type='normal',
+    image=img_file_to_str('assets/figs/vase.png'),
+    category='工作'
+)
+
 db_api.send_email(
     sender='ben',
     receiver='andy',
     title='Test Email 3',
     content='Just for testing xxxxx, too.',
     system_type='normal',
-    image=img_file_to_str('assets/figs/forest.png'),
+    image=img_file_to_str('assets/figs/gun.png'),
     category='學校'
 )
 db_api.send_email(
@@ -140,7 +151,7 @@ db_api.send_email(
     sender='Stony Brook University',
     receiver='andy',
     title='Congratulations on Your Admission to Stony Brook CS',
-    content='Dear Andy, congratulations! We are pleased to inform you that you have been admitted to the Computer Science undergraduate program at Stony Brook University for the upcoming academic year. Welcome to the Seawolf family! Sincerely, Office of Admissions, Stony Brook University.',
+    content='Dear Andy,\n\nCongratulations! We are pleased to inform you that you have been admitted to the Computer Science undergraduate program at Stony Brook University for the upcoming academic year.\n\nWelcome to the Seawolf family!\n\nSincerely,\nOffice of Admissions,\nStony Brook University.',
     system_type='normal',
     image=None
 )
@@ -148,7 +159,7 @@ db_api.send_email(
     sender='Purdue University',
     receiver='andy',
     title='Admission Offer from Purdue University',
-    content='Dear Andy, congratulations! We are excited to inform you that you have been admitted to the Data Science undergraduate program at Purdue University for the upcoming academic year. Welcome to the Boilermaker community! Sincerely, Office of Admissions, Purdue University.',
+    content='Dear Andy,\n\nCongratulations! We are excited to inform you that you have been admitted to the Data Science undergraduate program at Purdue University for the upcoming academic year.\n\nWelcome to the Boilermaker community!\n\nSincerely,\nOffice of Admissions,\nPurdue University.',
     system_type='normal',
     image=None
 )
@@ -156,7 +167,7 @@ db_api.send_email(
     sender='University of Washington',
     receiver='andy',
     title='Application Decision from University of Washington',
-    content='Dear Andy, thank you for your interest in the Computer Science program at the University of Washington. After careful review, we regret to inform you that we are unable to offer you admission at this time. We appreciate your efforts and wish you success in your future endeavors. Sincerely, Office of Admissions, University of Washington.',
+    content='Dear Andy,\n\nThank you for your interest in the Computer Science program at the University of Washington. After careful review, we regret to inform you that we are unable to offer you admission at this time.\n\nWe appreciate your efforts and wish you success in your future endeavors.\n\nSincerely,\nOffice of Admissions,\nUniversity of Washington.',
     system_type='normal',
     image=None
 )
@@ -164,15 +175,16 @@ db_api.send_email(
     sender='University of Pennsylvania',
     receiver='andy',
     title='Admission Decision from University of Pennsylvania',
-    content='Dear Andy, thank you for your interest in the Computer Science program at the University of Pennsylvania. After thorough consideration, we regret to inform you that we are unable to offer you admission at this time. We appreciate your hard work and wish you the best in your future academic endeavors. Sincerely, Office of Admissions, University of Pennsylvania.',
+    content='Dear Andy,\n\nThank you for your interest in the Computer Science program at the University of Pennsylvania. After thorough consideration, we regret to inform you that we are unable to offer you admission at this time.\n\nWe appreciate your hard work and wish you the best in your future academic endeavors.\n\nSincerely,\nOffice of Admissions,\nUniversity of Pennsylvania.',
     system_type='normal',
     image=None
 )
+
 db_api.send_email(
     sender='University of Pittsburgh',
     receiver='cindy',
     title='PhD Admission and Full Scholarship Award from University of Pittsburgh',
-    content='Dear Cindy, congratulations! We are pleased to offer you admission to the Electrical Engineering PhD program at the University of Pittsburgh. In addition, you have been awarded a full scholarship covering your tuition and stipend. Welcome to the Panther research community! Sincerely, Graduate Admissions Office, University of Pittsburgh.',
+    content='Dear Cindy,\n\nCongratulations! We are pleased to offer you admission to the Electrical Engineering PhD program at the University of Pittsburgh. In addition, you have been awarded a full scholarship covering your tuition and stipend.\n\nWelcome to the Panther research community!\n\nSincerely,\nGraduate Admissions Office,\nUniversity of Pittsburgh.',
     system_type='normal',
     image=None
 )
@@ -180,7 +192,7 @@ db_api.send_email(
     sender='Carnegie Mellon University',
     receiver='cindy',
     title='PhD Admission and Full Funding from Carnegie Mellon University',
-    content='Dear Cindy, congratulations! We are excited to offer you admission to the Electrical and Computer Engineering PhD program at Carnegie Mellon University. You have also been awarded full funding covering tuition and living stipend. Welcome to the CMU community! Sincerely, Graduate Admissions Office, Carnegie Mellon University.',
+    content='Dear Cindy,\n\nCongratulations! We are excited to offer you admission to the Electrical and Computer Engineering PhD program at Carnegie Mellon University. You have also been awarded full funding covering tuition and living stipend.\n\nWelcome to the CMU community!\n\nSincerely,\nGraduate Admissions Office,\nCarnegie Mellon University.',
     system_type='normal',
     image=None
 )
@@ -188,7 +200,7 @@ db_api.send_email(
     sender='California Polytechnic State University',
     receiver='cindy',
     title='PhD Admission and Full Ride Scholarship at Cal Poly',
-    content='Dear Cindy, congratulations! We are delighted to offer you admission to the Electrical Engineering PhD program at California Polytechnic State University. You have been awarded a full ride scholarship covering tuition and living expenses. Welcome to the Cal Poly community! Sincerely, Graduate Admissions Office, California Polytechnic State University.',
+    content='Dear Cindy,\n\nCongratulations! We are delighted to offer you admission to the Electrical Engineering PhD program at California Polytechnic State University. You have been awarded a full ride scholarship covering tuition and living expenses.\n\nWelcome to the Cal Poly community!\n\nSincerely,\nGraduate Admissions Office,\nCalifornia Polytechnic State University.',
     system_type='normal',
     image=None
 )
@@ -196,7 +208,7 @@ db_api.send_email(
     sender='Oregon State University',
     receiver='andy',
     title='PhD Admission with Full Funding and RA Position at Oregon State University',
-    content='''Dear Cindy, congratulations! We are pleased to offer you admission to the Electrical Engineering PhD program at Oregon State University. You have also been awarded full funding along with a Research Assistantship position. Welcome to the Beaver community! Sincerely, Graduate Admissions Office, Oregon State University.''',
+    content='Dear Cindy,\n\nCongratulations! We are pleased to offer you admission to the Electrical Engineering PhD program at Oregon State University. You have also been awarded full funding along with a Research Assistantship position.\n\nWelcome to the Beaver community!\n\nSincerely,\nGraduate Admissions Office,\nOregon State University.',
     system_type='normal',
     image=None
 )

@@ -20,8 +20,14 @@ class SimpleHandler(BaseHTTPRequestHandler):
 
         
         elif self.path == '/login':
-            username = data.get("username", [""])[0]
-            password = data.get("password", [""])[0]
+            content_type = self.headers.get('Content-Type', '')
+            if 'application/json' in content_type:
+                data = json.loads(body.decode())
+            else:
+                data = urllib.parse.parse_qs(body.decode())
+
+            username = data.get("username") if isinstance(data.get("username"), str) else data.get("username", [""])[0]
+            password = data.get("password") if isinstance(data.get("password"), str) else data.get("password", [""])[0]
             print(f'Login. Username: {username}, Password: {password}')
             login_success, categories = db_api.login(
                 username=username,
@@ -63,10 +69,13 @@ class SimpleHandler(BaseHTTPRequestHandler):
                     "read_status": row[8],
                     "image_uids": row[9],
                     "category": row[10],
+                    'recall': row[11],
                     "image_list": []
                 }
-                for row in email_list
+                for row in email_list if row[11] != 1
             ]
+
+
 
             for email in email_list:
                 print('USER TYPE', email['user_type'])
@@ -134,28 +143,47 @@ class SimpleHandler(BaseHTTPRequestHandler):
             
             if 'application/json' in content_type:
                 data = json.loads(body.decode('utf-8'))  # ✅ 正確解析 JSON
+                print("parse with json")
+                sender = data.get("sender", "")
+                receiver = data.get("receiver", "")
+                title = data.get("title", "")
+                content = data.get("content", "")
+                image_list = data.get("image_list", [])
+
             else:
                 data = urllib.parse.parse_qs(body.decode())  # fallback for form data
+                print("parse with urllib")
+                sender = data.get("sender", "")[0]
+                receiver = data.get("receiver", "")[0]
+                title = data.get("title", "")[0]
+                content = data.get("content", "")[0]
+                if data.get('image_list'):
+                    image_list = data.get("image_list", [])[0]
+                else:
+                    image_list = None
 
-            sender = data.get("sender", "")
-            receiver = data.get("receiver", "")
-            title = data.get("title", "")
-            content = data.get("content", "")
-            image_list = data.get("image_list", [])
 
             print(f"SEND email from {sender} to {receiver}")
-            print(f"image_list length: {len(image_list)}")
+            # print(f"image_list length: {len(image_list)}")
+
+            spam = spam_detection(content)
 
             db_api.send_email(
                 sender=sender,
                 receiver=receiver,
                 title=title,
                 content=content,
-                system_type=spam_detection(''),
+                system_type=spam,
                 image=image_list
             )
 
-            self._send_response({"status": "ok", "msg": "received"})
+            if spam == 'spam':
+
+                self._send_response({'status': 'ok', 'msg': 'spam'})
+
+            else:
+
+                self._send_response({"status": "ok", "msg": "received"})
 
         elif self.path == "/message":
             msg = data.get("message", [""])[0]
@@ -180,11 +208,12 @@ class SimpleHandler(BaseHTTPRequestHandler):
         elif self.path == '/mark_read':
             email_id = data.get("email_id", [""])[0]
             read_status = data.get("read_status", [""])[0]
+            print("標記為已讀", read_status)
 
-            if not read_status:
-                read_status_int = 0
-            else:
+            if read_status:
                 read_status_int = 1
+            else:
+                read_status_int = 0
 
             db_api.mark_read(email_id, read_status_int)
 
@@ -211,6 +240,14 @@ class SimpleHandler(BaseHTTPRequestHandler):
 
             self._send_response({'status': 'ok', 'msg': '成功修改類別'})
 
+        elif self.path == '/recall':
+            email_id = data.get("email_id", [""])[0]
+            print("RECALL EMAIL")
+            db_api.recall(
+                email_id
+            )
+            self._send_response({'status': 'ok', 'msg': '成功收回信件'})
+
         else:
             self._send_response({"status": "error", "msg": "未知路由"}, code=404)
 
@@ -221,6 +258,6 @@ class SimpleHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(json_data).encode("utf-8"))
 
 if __name__ == "__main__":
-    server = HTTPServer(('localhost', 8080), SimpleHandler)
+    server = HTTPServer(('0.0.0.0', 8080), SimpleHandler)
     print("伺服器啟動：http://localhost:8080")
     server.serve_forever()

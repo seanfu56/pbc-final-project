@@ -18,18 +18,14 @@ def spam_detection(text):
     predictions = torch.argmax(logits, dim=1)
 
     label_map = {0: "normal", 1: "spam"}
+    return 'normal'
     return [label_map[pred.item()] for pred in predictions][0]
 
 # 測試
 if __name__ == "__main__":
-    sample_emails = [
-        "Urgent: Verify your account immediately.",
-        "Happy Birthday!",
-        "Claim your free prize now!",
-        "Let's meet at 3 PM"
-    ]
+    sample_emails = "Urgent: Verify your account immediately."
     results = spam_detection(sample_emails)
-
-    for email, label in zip(sample_emails, results):
-        print(f"Text: {email}")
-        print(f"Label: {label}\n")
+    print(results)
+    # for email, label in zip(sample_emails, results):
+    #     print(f"Text: {email}")
+    #     print(f"Label: {label}\n")

@@ -11,11 +11,15 @@ import base64
 import requests
 from datetime import datetime
 import time
-from transformers import pipeline
+from transformers import pipeline, BlipProcessor, BlipForConditionalGeneration
 import json
 # from components.email import EmailDialog
 from container.ai_helper import DiscussionDialog
-
+from container.rich_text_editor import RichTextEditor
+from PIL import Image
+import io
+import llama_cpp
+import re
 # 登入窗口類
 
 class ClickableBlurImage(QWidget):
@@ -228,7 +232,7 @@ class ComposeTab(QWidget):
         self.sender_username = sender_username
         self.mail_system = mail_system
         self.image_list = []
-
+ 
         layout = QVBoxLayout()
         layout.setSpacing(8)
 
@@ -240,9 +244,10 @@ class ComposeTab(QWidget):
         self.subject_input.setPlaceholderText("信件標題")
         layout.addWidget(self.subject_input)
 
-        self.content_input = QTextEdit()
-        self.content_input.setPlaceholderText("信件內容")
-        self.content_input.textChanged.connect(self.handle_text_changed)
+        # self.content_input = QTextEdit()
+        self.content_input = RichTextEditor()
+        self.content_input.text_edit.setPlaceholderText("信件內容")
+        self.content_input.text_edit.textChanged.connect(self.handle_text_changed)
         self.content_input.installEventFilter(self)
         layout.addWidget(self.content_input, stretch=1)
 
@@ -261,7 +266,7 @@ class ComposeTab(QWidget):
         send_button.clicked.connect(self.send_email)
         self.toggle_button = QPushButton("預測：開啟")
         self.toggle_button.setCheckable(True)
-        self.toggle_button.setChecked(True)
+        self.toggle_button.setChecked(False)
         self.toggle_button.clicked.connect(self.toggle_prediction)
 
         self.debounce_timer = QTimer()
@@ -288,6 +293,9 @@ class ComposeTab(QWidget):
             do_sample = False,
             early_stopping = True,
         )
+
+        self.content_input.text_edit.installEventFilter(self)
+
 
         self.init_state()
 
@@ -376,7 +384,7 @@ class ComposeTab(QWidget):
 
         self.is_handling_preview = True
 
-        cursor = self.content_input.textCursor()
+        cursor = self.content_input.text_edit.textCursor()
         original_position = cursor.position()
 
         cursor.movePosition(QTextCursor.End)
@@ -387,16 +395,16 @@ class ComposeTab(QWidget):
         cursor.insertText(self.suggestion, fmt)
 
         cursor.setPosition(original_position)
-        self.content_input.setTextCursor(cursor)
+        self.content_input.text_edit.setTextCursor(cursor)
 
         self.is_handling_preview = False
 
     # ========================== 取得使用者真實輸入（不含預測） ==========================
     def get_user_text_only(self):
         if self.prediction_start_pos is None:
-            return self.content_input.toPlainText()
+            return self.content_input.text_edit.toPlainText()
         else:
-            cursor = self.content_input.textCursor()
+            cursor = self.content_input.text_edit.textCursor()
             cursor.setPosition(0)
             cursor.setPosition(self.prediction_start_pos, QTextCursor.KeepAnchor)
             return cursor.selectedText()
@@ -405,7 +413,7 @@ class ComposeTab(QWidget):
     def clear_prediction(self):
         if self.prediction_start_pos is not None:
             self.is_handling_preview = True
-            cursor = self.content_input.textCursor()
+            cursor = self.content_input.text_edit.textCursor()
             cursor.setPosition(self.prediction_start_pos)
             cursor.movePosition(QTextCursor.End, QTextCursor.KeepAnchor)
             cursor.removeSelectedText()
@@ -421,7 +429,7 @@ class ComposeTab(QWidget):
 
         self.is_handling_preview = True
 
-        cursor = self.content_input.textCursor()
+        cursor = self.content_input.text_edit.textCursor()
         cursor.beginEditBlock()
 
         # 移除灰色預測文字
@@ -447,7 +455,7 @@ class ComposeTab(QWidget):
 
     # ========================== 處理鍵盤事件（包含 Tab 鍵） ==========================
     def eventFilter(self, obj, event):
-        if obj == self.content_input and event.type() == event.KeyPress:
+        if obj == self.content_input.text_edit and event.type() == event.KeyPress:
             if event.key() == Qt.Key_Tab and self.suggestion:
                 self.apply_suggestion()
                 return True  # 告訴 Qt：事件已處理，不要再傳給其他元件
@@ -472,14 +480,19 @@ class ComposeTab(QWidget):
                 "sender": self.sender_username,
                 "receiver": self.to_input.text(),
                 "title": self.subject_input.text(),
-                "content": self.content_input.toPlainText(),
+                "content": self.content_input.text_edit.toHtml(),
                 "image_list": self.image_list
             }
             print(f"Sending email with payload: {payload}")
             r = requests.post("http://localhost:8080/send", json=payload)
             print(f"Response from /send: status_code={r.status_code}, response={r.text}")
-            if r.status_code == 200 and r.json().get("status") == "ok":
+            if r.status_code == 200 and r.json().get("status") == "ok" and r.json().get('msg') == 'received':
                 QMessageBox.information(self, "成功", "信件已寄出！")
+                self.clear_inputs()
+                self.mail_system.hide_compose()
+                self.mail_system.refresh_ui()
+            elif r.status_code == 200 and r.json().get('status') == 'ok' and r.json().get('msg') == 'spam':
+                QMessageBox.information(self, "成功", "您寄出的信件可能是垃圾郵件，以自動被系統標注")
                 self.clear_inputs()
                 self.mail_system.hide_compose()
                 self.mail_system.refresh_ui()
@@ -513,13 +526,15 @@ class ComposeTab(QWidget):
     def load_email(self, email):
         self.to_input.setText(email.get('receiver', ''))
         self.subject_input.setText(email.get('title', ''))
-        self.content_input.setText(email.get('content', ''))
+        self.content_input.text_edit.setText(email.get('content', ''))
         self.image_list = email.get("image_list", [])
         self.attachment_preview.clear()
         if self.image_list:
             # pixmap = QPixmap()
             # pixmap.loadFromData(base64.b64decode(self.image_list[0]))
             # self.attachment_preview.setPixmap(pixmap.scaledToWidth(100))
+
+
 
             pixmap = QPixmap()
             pixmap.loadFromData(base64.b64decode(self.image_list[0]))
@@ -879,6 +894,13 @@ class MailSystem(QMainWindow):
         self.content_text.setEnabled(True)
         self.email_content_layout.addWidget(self.content_text, stretch=1)
 
+        self.llm = llama_cpp.Llama.from_pretrained(
+            repo_id='TheBloke/LLaMA-7b-GGUF',
+            filename='llama-7b.Q4_K_M.gguf',
+            verbose=False,
+            temperature=0.0
+        )
+
         # 郵件內容操作（回復、轉發、設定類別、恢復）
         self.email_actions_layout = QHBoxLayout()
         self.reply_btn = QPushButton("回復")
@@ -894,6 +916,12 @@ class MailSystem(QMainWindow):
         self.email_actions_layout.addWidget(self.forward_btn)
         self.discuss_btn = QPushButton("AI助手")
         self.discuss_btn.clicked.connect(self.open_discussion_dialog)
+        self.smart_reply_btn = QPushButton('AI Reply')
+        self.smart_reply_btn.clicked.connect(self.smart_reply_email)
+        self.recall_btn = QPushButton("收回")
+        self.recall_btn.clicked.connect(self.recall_email)
+        self.email_actions_layout.addWidget(self.recall_btn)
+        self.email_actions_layout.addWidget(self.smart_reply_btn)
         self.email_actions_layout.addWidget(self.discuss_btn)
         self.email_actions_layout.addWidget(self.content_restore_btn)
         self.email_actions_layout.addWidget(self.content_set_category_combo)
@@ -905,10 +933,96 @@ class MailSystem(QMainWindow):
         self.compose_widget.hide()
         self.content_layout.addWidget(self.compose_widget)
 
+        self.blip_processor = BlipProcessor.from_pretrained('Salesforce/blip-image-captioning-base')
+        self.blip_model = BlipForConditionalGeneration.from_pretrained('Salesforce/blip-image-captioning-base')
+
         # 初始化為收件匣介面
         print(f"Switching to {self.current_folder} at {datetime.now()}")
         self.switch_folder(self.current_folder)
         print(f"Switched to {self.current_folder} at {datetime.now()}")
+
+    def smart_reply_email(self):
+        if not self.current_email:
+            QMessageBox.warning(self, "Error", "Please select an email to reply.")
+            return
+
+        instruction, ok = QInputDialog.getText(self, "AI Reply", "Enter your instruction (e.g. I will go):")
+        if not ok or not instruction.strip():
+            return
+
+        original_content = self.current_email.get("content", "")
+        prompt = f"""You are an assistant that writes polite and appropriate email replies based on user instructions.
+
+        Example 1:
+        Original email:
+        ---
+        Dear Mr. Zhang,
+
+        We sincerely invite you to attend next Friday's AI technology workshop at GIS NTU Convention Center. We look forward to seeing you!
+
+        Best regards,
+        Andy
+
+        Instruction: I will go
+
+        Reply:
+        Dear Jane,
+
+        Thank you for your kind invitation. I will be attending the workshop next Friday at the GIS NTU Convention Center. I look forward to it.
+
+        Best regards,  
+        Andy
+
+        Example 2:
+        Original email:
+        ---
+        Hi David,
+
+        We’re organizing a meeting next Monday to discuss the Q2 marketing strategy. Will you be available to join?
+
+        Best regards,  
+        Andy
+
+        Instruction: I’m not available
+
+        Reply:
+        Hi Emily,
+
+        Thank you for the invitation. Unfortunately, I won’t be available next Monday for the meeting. Please let me know if there will be a follow-up session or if I can contribute asynchronously.
+
+        Best regards,  
+        Andy
+
+        Now it's your turn:
+
+        Original email:
+        ---
+        {original_content}
+
+        Instruction: {instruction.strip()}
+
+        Reply:"""
+
+        def truncate_after_closing(text):
+            # 匹配 Best regards 開頭，到第一個換行為止（含 Best regards 本身）
+            pattern = r"(Sincerely,?[^\S\r\n]*\n?)"
+            match = re.search(pattern, text)
+            if match:
+                end_idx = match.end()
+                return text[:end_idx].rstrip()
+            return text.strip()
+
+        try:
+            output = self.llm(prompt, max_tokens=200)['choices'][0]['text']
+            output = truncate_after_closing(output)
+            self.show_compose()
+            self.compose_widget.to_input.setText(self.current_email.get("sender", ""))
+            self.compose_widget.subject_input.setText(f"Re: {self.current_email.get('title', '')}")
+            self.compose_widget.content_input.text_edit.setPlainText(output)
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to generate reply: {e}")
+
+        
 
     def on_splitter_moved(self, pos, index):
         pass
@@ -1032,9 +1146,10 @@ class MailSystem(QMainWindow):
             item = QListWidgetItem(display_text)
             item.setSizeHint(QSize(0, 30))
             font = QFont()
-            font.setBold(not email.get('read', False))
+            font.setBold(not email.get('read_status', False))
             item.setFont(font)
-            item.setForeground(Qt.blue if not email.get('read', False) else Qt.black)
+            item.setForeground(Qt.blue if not email.get('read_status', False) else Qt.black)
+            print("email.get('read_status'):", email.get('read_status'))
             if self.selection_mode:
                 item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                 item.setCheckState(Qt.Checked if i in checked_indices else Qt.Unchecked)
@@ -1122,11 +1237,13 @@ class MailSystem(QMainWindow):
             one_week_ago = (datetime.now() - datetime.timedelta(days=7)).timestamp()
             emails = [e for e in emails if float(e.get('timestamp', 0)) >= one_week_ago]
         elif self.filter_type == "已讀郵件":
-            emails = [e for e in emails if e.get('read', False)]
+            emails = [e for e in emails if e.get('read_status', False)]
         elif self.filter_type == "未讀郵件":
-            emails = [e for e in emails if not e.get('read', False)]
+            emails = [e for e in emails if not e.get('read_status', False)]
         elif self.filter_type == "內容關鍵字" and self.content_keyword:
             emails = [e for e in emails if self.content_keyword.lower() in e.get('content', '').lower()]
+
+        emails.sort(key=lambda x: float(x.get('timestamp', 0)),reverse=True)
 
         return emails
 
@@ -1272,13 +1389,22 @@ class MailSystem(QMainWindow):
         
 
     def load_email(self, item):
+        if self.selection_mode:
+            return
         index = self.email_list.row(item)
         emails_in_folder = self.get_filtered_emails()
         if index >= len(emails_in_folder):
             return
         email = emails_in_folder[index]
         self.current_email = email
-        email['read'] = True
+        if not email.get('read_status'):
+            email['read_status'] = True
+            try:
+                payload = {"email_id": email.get("uid"), "read_status": True}
+                r = requests.post("http://localhost:8080/mark_read", data=payload)
+                print("自動標記為已讀:", r.json())
+            except requests.exceptions.RequestException as e:
+                print(f"自動標記為已讀時發生錯誤: {str(e)}")
         self.is_displaying_email = True
         self.display_email(email)
         QTimer.singleShot(50, self.post_display_refresh)
@@ -1297,7 +1423,7 @@ class MailSystem(QMainWindow):
             self.sender_label.setText(f"寄件人: {email.get('sender', '未知寄件人')}")
             ts = float(email.get('timestamp', 0))
             self.date_label.setText(f"日期: {datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')}")
-            self.content_text.setPlainText(email.get('content', ''))
+            self.content_text.setHtml(email.get('content', ''))
             self.reply_btn.show()
             self.forward_btn.show()
             self.content_restore_btn.setVisible(
@@ -1310,6 +1436,7 @@ class MailSystem(QMainWindow):
             )
             self.hide_compose()
             self.email_content_widget.setVisible(True)
+            self.recall_btn.setVisible(self.current_folder == 'sent')
             image_list = email.get("image_list", [])
             while self.email_content_layout.count() > 5:
                 widget = self.email_content_layout.itemAt(5).widget()
@@ -1322,6 +1449,11 @@ class MailSystem(QMainWindow):
                         pixmap = QPixmap()
                         pixmap.loadFromData(base64.b64decode(img_str))
                         caption = f"圖片 {idx+1}"  # 你也可以自定文字或從後端取得
+                        image = Image.open(io.BytesIO(base64.b64decode(img_str))).convert('RGB')
+                        inputs = self.blip_processor(images=image, return_tensors='pt')
+                        out = self.blip_model.generate(**inputs)
+                        caption = self.blip_processor.decode(out[0], skip_special_tokens=True)
+                        print("CAPTION: ", caption)
                         blur_widget = ClickableBlurImage(pixmap, caption)
                         self.email_content_layout.addWidget(blur_widget)
                     except Exception as e:
@@ -1462,7 +1594,7 @@ class MailSystem(QMainWindow):
                 payload = {"email_id": email_id, "read_status": read_status}
                 r = requests.post("http://localhost:8080/mark_read", data=payload)
                 if r.status_code == 200 and r.json().get("status") == "ok":
-                    email['read'] = read_status
+                    email['read_status'] = read_status
                     count += 1
                 else:
                     QMessageBox.warning(self, "失敗", f"標記狀態失敗：{r.json().get('msg', 'Unknown error')}")
@@ -1508,7 +1640,7 @@ class MailSystem(QMainWindow):
         self.show_compose()
         self.compose_widget.to_input.setText(email.get('sender', ''))
         self.compose_widget.subject_input.setText(f"Re: {email.get('title', '')}")
-        self.compose_widget.content_input.setPlainText(f"\n\n--- 原郵件 ---\n{email.get('content', '')}")
+        self.compose_widget.content_input.text_edit.setPlainText(f"\n\n--- Reply ---\n{email.get('content', '')}")
 
     def forward_email(self):
         emails = self.get_target_emails()
@@ -1520,7 +1652,7 @@ class MailSystem(QMainWindow):
         self.compose_widget.to_input.clear()
         self.compose_widget.subject_input.setText(f"Fwd: {email.get('title', '')}")
         ts = float(email.get('timestamp', 0))
-        self.compose_widget.content_input.setPlainText(
+        self.compose_widget.content_input.text_edit.setPlainText(
             f"\n\n--- 轉發郵件 ---\n寄件人: {email.get('sender', '')}\n日期: {datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')}\n{email.get('content', '')}"
         )
 
@@ -1579,6 +1711,7 @@ class MailSystem(QMainWindow):
             self.forward_btn.hide()
             self.content_restore_btn.hide()
             self.content_set_category_combo.hide()
+            self.recall_btn.hide()
             while self.email_content_layout.count() > 5:
                 widget = self.email_content_layout.itemAt(5).widget()
                 if widget:
@@ -1611,6 +1744,27 @@ class MailSystem(QMainWindow):
     def logout(self):
         self.logout_signal.emit()
         self.close()
+
+    def recall_email(self):
+        if not self.current_email or self.current_folder != "sent":
+            QMessageBox.warning(self, "錯誤", "只能收回寄件備份中的信件。")
+            return
+
+        email_id = self.current_email.get("uid")
+        reply = QMessageBox.question(self, "確認收回", "確定要收回這封信件？", QMessageBox.Ok | QMessageBox.Cancel)
+        if reply != QMessageBox.Ok:
+            return
+
+        try:
+            payload = {"email_id": email_id}
+            r = requests.post("http://localhost:8080/recall", data=payload)
+            if r.status_code == 200 and r.json().get("status") == "ok":
+                QMessageBox.information(self, "成功", "信件已成功收回")
+                self.refresh_ui()
+            else:
+                QMessageBox.warning(self, "失敗", f"收回信件失敗：{r.text}")
+        except requests.exceptions.RequestException as e:
+            QMessageBox.warning(self, "錯誤", f"無法連線到後端伺服器：{str(e)}")
 
 if __name__ == "__main__":
     print(f"Starting application at {datetime.now()}")
